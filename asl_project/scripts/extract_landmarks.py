@@ -1,6 +1,7 @@
 import mediapipe as mp
 import cv2
 import os
+import csv
 
 
 # Mediapipe 
@@ -16,6 +17,8 @@ folders = os.listdir(dataset_path)
 
 allData = []
 for folder in folders: 
+    if folder == '.DS_Store':
+        continue
     alphabet_folders = os.listdir(os.path.join(dataset_path, folder)) #locate each alphabet folder
     for image in alphabet_folders: 
         row = [folder]
@@ -29,8 +32,12 @@ for folder in folders:
             hand_landmarks = result.multi_hand_landmarks[0]
             for lm in hand_landmarks.landmark: 
                 row.extend([lm.x, lm.y, lm.z])
-                allData.append(row)
-                
+            allData.append(row)
+
+csv_file_path = '../data/landmarks.csv'          
+with open(csv_file_path, 'w') as f: 
+    writer = csv.writer(f)
+    writer.writerows(allData)
 
 
 
