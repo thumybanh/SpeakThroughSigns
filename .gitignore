@@ -1,0 +1,5 @@
+asl_project/asl_env/
+asl_project/data/
+__pycache__/
+*.pyc
+.DS_Store
