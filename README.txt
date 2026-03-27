@@ -22,7 +22,7 @@ and OpenCV to translate hand gestures into text in real-time.
 Ensure you have Python installed, then run this command in 
 your terminal to install the necessary libraries:
 
-pip install opencv-python mediapipe scikit-learn numpy
+pip install opencv-python mediapipe scikit-learn numpy pyttsx3
 
 ------------------------------------------------------------
 3.  HOW TO RUN
