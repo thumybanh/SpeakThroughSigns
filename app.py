@@ -13,6 +13,33 @@ import pickle
 import time
 import os
 import math
+import threading
+
+# ── Text-to-Speech (Windows SAPI via pyttsx3) ────────────────────────────────
+try:
+    import pyttsx3
+    _tts = pyttsx3.init()
+    _tts.setProperty("rate", 160)
+    _tts_ok = True
+except Exception as _e:
+    print(f"TTS unavailable: {_e}\nRun:  pip install pyttsx3")
+    _tts_ok = False
+
+_tts_lock = threading.Lock()
+
+def speak(text):
+    """Speak text in a background thread — UI never blocks."""
+    if not text or not text.strip():
+        return
+    def _run():
+        with _tts_lock:
+            try:
+                if _tts_ok:
+                    _tts.say(text)
+                    _tts.runAndWait()
+            except Exception as e:
+                print(f"TTS error: {e}")
+    threading.Thread(target=_run, daemon=True).start()
 
 MODEL_FILE  = "model.pkl"
 MODEL_PATH  = "hand_landmarker.task"
@@ -90,14 +117,15 @@ OUT_X        = CAM_X + 10
 OUT_W        = CAM_W - 20
 
 BTN_H  = 44
-BTN_W  = 148
-GAP    = 12
+BTN_W  = 108
+GAP    = 10
 BTN_Y  = WIN_H - 60
-BTN_SX = CAM_X + (CAM_W - (3*BTN_W + 2*GAP)) // 2
+BTN_SX = CAM_X + (CAM_W - (4*BTN_W + 3*GAP)) // 2
 
-BTN_CLEAR = (BTN_SX,                BTN_Y, BTN_W, BTN_H)
-BTN_SAVE  = (BTN_SX+BTN_W+GAP,      BTN_Y, BTN_W, BTN_H)
-BTN_QUIT  = (BTN_SX+2*(BTN_W+GAP),  BTN_Y, BTN_W, BTN_H)
+BTN_CLEAR = (BTN_SX,               BTN_Y, BTN_W, BTN_H)
+BTN_SAVE  = (BTN_SX+BTN_W+GAP,     BTN_Y, BTN_W, BTN_H)
+BTN_SPEAK = (BTN_SX+2*(BTN_W+GAP), BTN_Y, BTN_W, BTN_H)
+BTN_QUIT  = (BTN_SX+3*(BTN_W+GAP), BTN_Y, BTN_W, BTN_H)
 
 # ── Reference panel layout ────────────────────────────────────────────────────
 ALL_KEYS  = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ["DELETE", "SPACE"]
@@ -248,6 +276,7 @@ last_confirmed = 0.0
 mouse_click    = None
 last_hi        = None
 ref_panel      = make_panel(None)
+flash_start    = 0.0   # time of last confirmed letter (for snap flash)
 
 cv2.namedWindow("Sign Language to Text", cv2.WINDOW_NORMAL)
 cv2.resizeWindow("Sign Language to Text", WIN_W, WIN_H)
@@ -313,6 +342,7 @@ with HandLandmarker.create_from_options(options) as detector:
                     else:                    phrase += stable
                     last_confirmed = now
                     locked         = True
+                    flash_start    = now   # trigger snap flash
         elif stable != last_stable:
             last_stable = stable
             lock_start  = now
@@ -387,20 +417,20 @@ with HandLandmarker.create_from_options(options) as detector:
                 cv2.putText(canvas, disp, (px,py),
                             cv2.FONT_HERSHEY_DUPLEX, fs, col, 4, cv2.LINE_AA)
 
-        # confidence bar
-        bx, by = CAM_X+12, CAM_H-72
-        cv2.putText(canvas, "Confidence",
-                    (bx, by-6), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_MUTED, 1, cv2.LINE_AA)
-        bar(canvas, bx, by, 180, 8, conf_now, C_WHITE)
-        cv2.putText(canvas, f"{conf_now:.0%}",
-                    (bx+188, by+7), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_LIGHT, 1, cv2.LINE_AA)
-
-        # hold bar
+        # hold bar — neon cyan glow
+        bx, by = CAM_X+12, CAM_H-38
         if stable and not locked:
-            hy = by+20
             cv2.putText(canvas, "Hold to confirm",
-                        (bx, hy-4), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_MUTED, 1, cv2.LINE_AA)
-            bar(canvas, bx, hy, 180, 8, hold_pct, C_LIGHT)
+                        (bx, by-4), cv2.FONT_HERSHEY_SIMPLEX, 0.33, C_WHITE, 1, cv2.LINE_AA)
+            rounded_rect(canvas, bx, by, 180, 8, 4, (45,45,45))
+            fw = int(180 * hold_pct)
+            if fw > 4:
+                # glow pass (wider, dimmer)
+                glow = canvas.copy()
+                rounded_rect(glow, bx, by-2, fw, 12, 6, (0, 180, 60))
+                cv2.addWeighted(glow, 0.30, canvas, 0.70, 0, canvas)
+                # main neon green bar
+                rounded_rect(canvas, bx, by, fw, 8, 4, (0, 255, 80))
 
         # output card
         rounded_rect(canvas, OUT_X, OUT_Y, OUT_W, OUT_H, 10, C_CARD)
@@ -429,9 +459,10 @@ with HandLandmarker.create_from_options(options) as detector:
                      C_LIGHT, 2)
 
         # ── Buttons — white fill, black text ──────────────────────────────
-        draw_btn(canvas, BTN_CLEAR, "Clear All",        C_BTN_WHITE, C_BLACK)
-        draw_btn(canvas, BTN_SAVE,  "Save in File", C_BTN_WHITE, C_BLACK)
-        draw_btn(canvas, BTN_QUIT,  "Quit (Q)",         C_BTN_WHITE, C_BLACK)
+        draw_btn(canvas, BTN_CLEAR, "Clear All",    C_BTN_WHITE,    C_BLACK)
+        draw_btn(canvas, BTN_SAVE,  "Save in File", C_BTN_WHITE,    C_BLACK)
+        draw_btn(canvas, BTN_SPEAK, "Speak [T]",   (180, 220, 180), C_BLACK)
+        draw_btn(canvas, BTN_QUIT,  "Quit (Q)",     C_BTN_WHITE,    C_BLACK)
 
         # cv2.putText(canvas,
         #            "SPACE = space     BKSP = delete     Q = quit",
@@ -443,11 +474,25 @@ with HandLandmarker.create_from_options(options) as detector:
         canvas[:rph, 0:PANEL_W] = ref_panel[:rph]
         cv2.line(canvas, (PANEL_W-1,0), (PANEL_W-1,WIN_H), C_BORDER, 1)
 
+        # ── Camera snap flash ──────────────────────────────────────────────
+        FLASH_DUR = 0.18   # seconds
+        flash_age = now - flash_start
+        if flash_age < FLASH_DUR:
+            alpha = 1.0 - (flash_age / FLASH_DUR)   # fades out
+            brightness = int(255 * alpha)
+            flash_overlay = np.full((CAM_H, CAM_W, 3), brightness, dtype=np.uint8)
+            canvas[CAM_Y:CAM_Y+CAM_H, CAM_X:CAM_X+CAM_W] = cv2.addWeighted(
+                canvas[CAM_Y:CAM_Y+CAM_H, CAM_X:CAM_X+CAM_W], 1 - alpha,
+                flash_overlay, alpha, 0
+            )
+
         cv2.imshow("Sign Language to Text", canvas)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q') or key == 27:
             running = False
+        elif key == ord('t') or key == ord('T'):
+            speak(phrase if phrase.strip() else "Nothing typed yet")
         elif key == ord(' '):
             phrase += ' '
             last_confirmed = time.time()
@@ -464,6 +509,8 @@ with HandLandmarker.create_from_options(options) as detector:
                 with open("sign_output.txt", "w") as f:
                     f.write(phrase)
                 print(f"Saved: '{phrase}'")
+            elif in_rect(mx, my, BTN_SPEAK):
+                speak(phrase if phrase.strip() else "Nothing typed yet")
             elif in_rect(mx, my, BTN_QUIT):
                 running = False
 
