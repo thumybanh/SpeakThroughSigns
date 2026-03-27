@@ -1,0 +1,5 @@
+@raaya @manu 
+
+Run this command before you guys start working so we can have everything in the same version: 
+
+# pip install -r requirements.txt
