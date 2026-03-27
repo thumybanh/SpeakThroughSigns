@@ -1,12 +1,13 @@
 import pandas as pd
 import tensorflow as tf
 import numpy as np
+import pickle
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 
 
 df = pd.read_csv('../data/landmarks.csv', header=None)
-
+df = df[~df[0].isin(['del', 'nothing', 'space'])]
 # alphabet letter 
 y = df[0]
 # numbers after the letter
@@ -31,8 +32,12 @@ model = tf.keras.Sequential([
 ])
 
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics = ['accuracy'] )
-model.fit(x_train,y_train,epochs=30,validation_data={})
+model.fit(x_train,y_train,epochs=30,validation_data=(x_test, y_test))
 
+model.save('../model/asl_model.keras')
+
+with open('../model/label_encoder.pkl', 'wb') as f: 
+    pickle.dump(le, f)
 
 
 
